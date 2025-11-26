@@ -29,7 +29,7 @@ const ProfileScreen = ({ navigation }) => {
     });
 
     if (!result.canceled) {
-setProfilePhoto(result.assets[0].uri);
+      setProfilePhoto(result.assets[0].uri);
     }
   };
 
@@ -63,6 +63,7 @@ setProfilePhoto(result.assets[0].uri);
           style={styles.row}
           onPress={() => navigation.navigate('Goals')}
         >
+          <Ionicons name="flag-outline" size={20} color="#22d3b6" />
           <Text style={styles.rowText}>Goals</Text>
         </TouchableOpacity>
 
@@ -70,9 +71,11 @@ setProfilePhoto(result.assets[0].uri);
           style={styles.row}
           onPress={() => navigation.navigate('Help')}
         >
+          <Ionicons name="help-circle-outline" size={20} color="#22d3b6" />
           <Text style={styles.rowText}>Help & Contact Us</Text>
         </TouchableOpacity>
       </View>
+
 
       <View style={{ marginTop: 24 }}>
         <PrimaryButton title="Log Out" onPress={logout} />
@@ -122,8 +125,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  rowText: { fontSize: 15 },
+  rowText: { fontSize: 15, marginLeft: 10, },
+
 });
 
 export default ProfileScreen;
