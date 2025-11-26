@@ -1,5 +1,5 @@
 // screens/AddFoodScreen.js
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,9 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
-import foods from '../data/foods.json';
+
 import { MyContext } from '../MyContext';
 import PrimaryButton from '../components/PrimaryButton';
 
@@ -19,39 +20,69 @@ const primary = '#22d3b6';
 
 const AddFoodScreen = () => {
   const { addFoodEntry, todayISO } = useContext(MyContext);
+
+  // Live food data from API
+  const [foods, setFoods] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Modal + Inputs
   const [query, setQuery] = useState('');
   const [selectedFood, setSelectedFood] = useState(null);
-
   const [quantity, setQuantity] = useState('1');
   const [gramsPerUnit, setGramsPerUnit] = useState('0');
 
+  // FETCH FOODS FROM REALTIME DATABASE API
+  useEffect(() => {
+    const fetchFoods = async () => {
+      try {
+        const res = await fetch(
+          'https://app1-7c511-default-rtdb.asia-southeast1.firebasedatabase.app/foods.json'
+        );
+        const data = await res.json();
+
+        // Convert Firebase object → array
+        const arr = Object.keys(data).map((key) => ({
+          id: key,
+          ...data[key],
+        }));
+
+        setFoods(arr);
+      } catch (err) {
+        console.log('Error fetching foods:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFoods();
+  }, []);
+
+  // FILTER LIST
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return foods;
     return foods.filter((f) => f.name.toLowerCase().includes(q));
-  }, [query]);
+  }, [query, foods]);
 
+  // Open modal
   const openModal = (food) => {
     setSelectedFood(food);
     setQuantity('1');
     setGramsPerUnit(String(food.servingGrams));
   };
 
-  const closeModal = () => {
-    setSelectedFood(null);
-  };
+  // Close modal
+  const closeModal = () => setSelectedFood(null);
 
+  // CALCULATE MACROS FOR CHOSEN QUANTITY
   const calcTotals = () => {
-    if (!selectedFood) {
-      return { kcal: 0, protein: 0, carbs: 0, fats: 0, gramsTotal: 0 };
-    }
+    if (!selectedFood) return { kcal: 0, protein: 0, carbs: 0, fats: 0, gramsTotal: 0 };
+
     const q = Number(quantity) || 0;
     const gPer = Number(gramsPerUnit) || 0;
-
     const gramsTotal = q * gPer;
-    if (gramsTotal <= 0 || selectedFood.servingGrams <= 0) {
-      return { kcal: 0, protein: 0, carbs: 0, fats: 0, gramsTotal: 0 };
-    }
+
+    if (gramsTotal <= 0) return { kcal: 0, protein: 0, carbs: 0, fats: 0, gramsTotal: 0 };
 
     const ratio = gramsTotal / selectedFood.servingGrams;
 
@@ -65,6 +96,8 @@ const AddFoodScreen = () => {
   };
 
   const totals = calcTotals();
+
+  
 
   const addToLog = () => {
     if (!selectedFood) return;
@@ -81,14 +114,17 @@ const AddFoodScreen = () => {
       gramsPerUnit: gPer,
       gramsTotal: totals.gramsTotal,
       servingGrams: selectedFood.servingGrams,
+
       perKcal: selectedFood.kcal,
       perProtein: selectedFood.protein,
       perCarbs: selectedFood.carbs,
       perFat: selectedFood.fat,
+
       kcal: totals.kcal,
       protein: totals.protein,
       carbs: totals.carbs,
       fats: totals.fats,
+
       date: todayISO(),
     };
 
@@ -100,6 +136,7 @@ const AddFoodScreen = () => {
     <View style={styles.container}>
       <Text style={styles.title}>Add Food</Text>
 
+      {/* Search box */}
       <View style={styles.searchRow}>
         <TextInput
           placeholder="Search food..."
@@ -109,41 +146,35 @@ const AddFoodScreen = () => {
         />
       </View>
 
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingTop: 16 }}
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.resultCard}
-            onPress={() => openModal(item)}
-          >
-            <View>
-              <Text style={{ fontWeight: '600' }}>{item.name}</Text>
-              <Text style={{ fontSize: 12, color: '#9ca3af' }}>
-                {item.description} – {item.kcal} kcal
-              </Text>
-            </View>
-            <Text style={{ color: primary, fontWeight: '700', fontSize: 18 }}>
-              +
-            </Text>
-          </TouchableOpacity>
-        )}
-      />
+      {/* Loader */}
+      {loading && (
+        <ActivityIndicator size="large" color={primary} style={{ marginTop: 40 }} />
+      )}
 
-      {/* modal with KeyboardAvoidingView */}
-      <Modal
-        visible={!!selectedFood}
-        animationType="slide"
-        transparent
-        onRequestClose={closeModal}
-      >
+      {/* Food list */}
+      {!loading && (
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.resultCard} onPress={() => openModal(item)}>
+              <View>
+                <Text style={{ fontWeight: '600' }}>{item.name}</Text>
+                <Text style={{ color: '#9ca3af', fontSize: 12 }}>
+                  {item.description} – {item.kcal} kcal
+                </Text>
+              </View>
+              <Text style={{ fontSize: 22, color: primary, fontWeight: '700' }}>+</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+
+      {/* Modal */}
+      <Modal visible={!!selectedFood} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={40}
-          >
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             <View style={styles.modalCard}>
               {selectedFood && (
                 <>
@@ -152,6 +183,7 @@ const AddFoodScreen = () => {
                     {selectedFood.kcal} kcal per {selectedFood.servingGrams} g
                   </Text>
 
+                  {/* Quantity + Grams */}
                   <View style={styles.row}>
                     <View style={styles.field}>
                       <Text style={styles.label}>QUANTITY</Text>
@@ -164,7 +196,6 @@ const AddFoodScreen = () => {
                         />
                       </View>
                     </View>
-
                     <View style={[styles.field, { marginLeft: 12 }]}>
                       <Text style={styles.label}>WEIGHT / PIECE (g)</Text>
                       <View style={styles.inputBox}>
@@ -178,40 +209,30 @@ const AddFoodScreen = () => {
                     </View>
                   </View>
 
+                  {/* Macros preview */}
                   <View style={styles.macrosRow}>
                     <View style={styles.macroBox}>
-                      <Text style={styles.macroValue}>
-                        {Math.round(totals.kcal) || 0}
-                      </Text>
+                      <Text style={styles.macroValue}>{Math.round(totals.kcal)}</Text>
                       <Text style={styles.macroLabel}>kcal</Text>
                     </View>
                     <View style={styles.macroBox}>
-                      <Text style={styles.macroValue}>
-                        {totals.protein.toFixed(1) || '0.0'}
-                      </Text>
+                      <Text style={styles.macroValue}>{totals.protein.toFixed(1)}</Text>
                       <Text style={styles.macroLabel}>Protein</Text>
                     </View>
                     <View style={styles.macroBox}>
-                      <Text style={styles.macroValue}>
-                        {totals.carbs.toFixed(1) || '0.0'}
-                      </Text>
+                      <Text style={styles.macroValue}>{totals.carbs.toFixed(1)}</Text>
                       <Text style={styles.macroLabel}>Carbs</Text>
                     </View>
                     <View style={styles.macroBox}>
-                      <Text style={styles.macroValue}>
-                        {totals.fats.toFixed(1) || '0.0'}
-                      </Text>
+                      <Text style={styles.macroValue}>{totals.fats.toFixed(1)}</Text>
                       <Text style={styles.macroLabel}>Fat</Text>
                     </View>
                   </View>
 
                   <PrimaryButton title="Add to Log" onPress={addToLog} />
 
-                  <TouchableOpacity
-                    style={{ marginTop: 12, alignItems: 'center' }}
-                    onPress={closeModal}
-                  >
-                    <Text style={{ color: '#9ca3af' }}>Cancel</Text>
+                  <TouchableOpacity onPress={closeModal} style={{ marginTop: 12 }}>
+                    <Text style={{ textAlign: 'center', color: '#9ca3af' }}>Cancel</Text>
                   </TouchableOpacity>
                 </>
               )}
@@ -225,51 +246,45 @@ const AddFoodScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  title: { fontSize: 22, fontWeight: '700', color: '#111827' },
+  title: { fontSize: 22, fontWeight: '700' },
   searchRow: {
+    marginTop: 12,
     backgroundColor: 'white',
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    marginTop: 12,
   },
   searchInput: { fontSize: 14 },
   resultCard: {
     backgroundColor: 'white',
+    padding: 16,
     borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 10,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',
   },
   modalCard: {
     backgroundColor: 'white',
+    padding: 20,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 20,
   },
   modalTitle: { fontSize: 18, fontWeight: '700' },
   modalSubtitle: { fontSize: 12, color: '#6b7280', marginTop: 4 },
-  row: {
-    flexDirection: 'row',
-    marginTop: 16,
-  },
+  row: { flexDirection: 'row', marginTop: 16 },
   field: { flex: 1 },
-  label: { fontSize: 11, color: '#6b7280' },
+  label: { fontSize: 12, color: '#6b7280' },
   inputBox: {
     marginTop: 4,
-    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: 12,
+    padding: 8,
   },
   input: { fontSize: 16 },
   macrosRow: {
@@ -280,12 +295,12 @@ const styles = StyleSheet.create({
   macroBox: {
     flex: 1,
     marginHorizontal: 4,
-    borderRadius: 16,
-    backgroundColor: '#f0fdfa',
     alignItems: 'center',
-    paddingVertical: 10,
+    backgroundColor: '#f0fdfa',
+    borderRadius: 16,
+    padding: 10,
   },
-  macroValue: { fontWeight: '700', fontSize: 16, color: primary },
+  macroValue: { fontSize: 16, fontWeight: '700', color: primary },
   macroLabel: { fontSize: 11, color: '#6b7280' },
 });
 
