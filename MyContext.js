@@ -28,13 +28,14 @@ export const MyContextProvider = ({ children }) => {
     fats: 65,
   });
 
-  // each entry is stored like Firestore docs
   const [foodLog, setFoodLog] = useState([]);
-
-  // profile photo local URI (also saved in Firestore)
   const [profilePhoto, setProfilePhoto] = useState(null);
+  const [weightHistory, setWeightHistory] = useState([]);
 
-  // 1) listen to auth state
+  // ⭐ NEW → Track if user finished SignupDetails
+  const [completedProfile, setCompletedProfile] = useState(false);
+
+  // 1) Listen for Firebase Auth changes
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -43,18 +44,19 @@ export const MyContextProvider = ({ children }) => {
     return unsub;
   }, []);
 
-  // 2) when user changes, set up Firestore listeners for user doc & food logs
+  // 2) Listen to Firestore user doc + food logs
   useEffect(() => {
     if (!user) {
       setFoodLog([]);
       setProfilePhoto(null);
+      setCompletedProfile(false);
       return;
     }
 
     const uid = user.uid;
-
-    // ensure user document exists / update basic fields
     const userDocRef = doc(db, 'users', uid);
+
+    // Make sure user doc exists
     setDoc(
       userDocRef,
       {
@@ -64,22 +66,26 @@ export const MyContextProvider = ({ children }) => {
       { merge: true }
     );
 
-    // listen to user document (goals + profilePhoto)
+    // Listen to user document changes
     const unsubUser = onSnapshot(userDocRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+
         if (data.goals) setGoals(data.goals);
         if (data.profilePhoto) setProfilePhoto(data.profilePhoto);
+        if (data.weightHistory) setWeightHistory(data.weightHistory);
+        // ⭐ NEW — Load the completedProfile flag
+        if (data.completedProfile !== undefined) {
+          setCompletedProfile(data.completedProfile);
+        }
       }
     });
 
-    // listen to food logs subcollection
+    // Listen to food logs
     const foodColRef = collection(db, 'users', uid, 'foodLogs');
     const unsubFood = onSnapshot(foodColRef, (querySnap) => {
       const items = [];
-      querySnap.forEach((d) => {
-        items.push({ id: d.id, ...d.data() });
-      });
+      querySnap.forEach((d) => items.push({ id: d.id, ...d.data() }));
       setFoodLog(items);
     });
 
@@ -90,79 +96,92 @@ export const MyContextProvider = ({ children }) => {
   }, [user]);
 
   // Firestore helpers
-
   const addFoodEntry = async (entry) => {
     if (!user) return;
-    const uid = user.uid;
-    const foodColRef = collection(db, 'users', uid, 'foodLogs');
+    const ref = collection(db, 'users', user.uid, 'foodLogs');
 
-    // we ignore entry.id, Firestore will create it
     const { id, ...data } = entry;
-    await addDoc(foodColRef, data);
+    await addDoc(ref, data);
   };
 
   const removeFoodEntry = async (id) => {
     if (!user) return;
-    const uid = user.uid;
-    const docRef = doc(db, 'users', uid, 'foodLogs', id);
-    await deleteDoc(docRef);
+    const ref = doc(db, 'users', user.uid, 'foodLogs', id);
+    await deleteDoc(ref);
   };
+
+  // NEW — update weight daily
+const updateWeight = async (newWeight) => {
+  if (!user) return;
+
+  const uid = user.uid;
+  const ref = doc(db, "users", uid);
+  const today = todayISO();
+
+  // Remove previous entry for today (if exists)
+  const updated = weightHistory.filter(w => w.date !== today);
+
+  // Add new weight record
+  updated.push({
+    date: today,
+    weight: Number(newWeight)
+  });
+
+  // Save back to Firestore
+  await setDoc(ref, { weightHistory: updated }, { merge: true });
+};
+
 
   const updateFoodEntry = async (updated) => {
     if (!user) return;
-    const uid = user.uid;
     const { id, ...rest } = updated;
-    const docRef = doc(db, 'users', uid, 'foodLogs', id);
-    await updateDoc(docRef, rest);
+    const ref = doc(db, 'users', user.uid, 'foodLogs', id);
+    await updateDoc(ref, rest);
   };
 
   const updateGoals = async (newGoals) => {
     setGoals(newGoals);
     if (!user) return;
-    const uid = user.uid;
-    const userDocRef = doc(db, 'users', uid);
-    await setDoc(
-      userDocRef,
-      {
-        goals: newGoals,
-      },
-      { merge: true }
-    );
+
+    const ref = doc(db, 'users', user.uid);
+    await setDoc(ref, { goals: newGoals }, { merge: true });
   };
 
   const saveProfilePhoto = async (uri) => {
     setProfilePhoto(uri);
     if (!user) return;
-    const uid = user.uid;
-    const userDocRef = doc(db, 'users', uid);
-    await setDoc(
-      userDocRef,
-      {
-        profilePhoto: uri,
-      },
-      { merge: true }
-    );
+
+    const ref = doc(db, 'users', user.uid);
+    await setDoc(ref, { profilePhoto: uri }, { merge: true });
   };
 
   const logout = async () => {
     await signOut(auth);
   };
 
-  const value = {
-    user,
-    setUser,
-    initializing,
-    goals,
-    foodLog,
-    addFoodEntry,
-    removeFoodEntry,
-    updateFoodEntry,
-    updateGoals,
-    logout,
-    todayISO,
-    profilePhoto,
-    setProfilePhoto: saveProfilePhoto, // use Firestore-saving version
-  };
-
-  return <MyContext.Provider value={value}>{children}</MyContext.Provider>;
+  return (
+    <MyContext.Provider
+      value={{
+        user,
+        setUser,
+        initializing,
+        goals,
+        foodLog,
+        addFoodEntry,
+        removeFoodEntry,
+        updateFoodEntry,
+        updateGoals,
+        logout,
+        todayISO,
+        profilePhoto,
+        setProfilePhoto: saveProfilePhoto,
+        weightHistory,
+        updateWeight,
+        // ⭐ EXPOSE completedProfile to RootNavigator
+        completedProfile,
+      }}
+    >
+      {children}
+    </MyContext.Provider>
+  );
 };
